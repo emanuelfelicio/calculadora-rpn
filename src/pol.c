@@ -1,84 +1,119 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "pol.h"
 
 /* Global variables for stack implementation */
-double stack[STACK_SIZE]; 
-int stackpointer = 0; 
-   
-int erro = 0;             
-
+double stack[STACK_SIZE];
+int stackpointer = 0;
 // Reverse Polish Notation (RPN) calculator.
 // Evaluates expressions where operators follow operands, e.g. "4 5 +" => 4 + 5
 #ifndef UNIT_TEST
 int main(int argc, char **argv)
 {
-    double my_atof(const char *);
-    void push(double);
-    double pop(void);
-    char is_operator(const char *);
-    void operation(const char *);
-
-    if (argc > 1)
+    if (argc <= 1)
     {
+        fprintf(stderr, "too few arguments\n");
+        exit(1);
+    }
 
-        for (int i = 1; i < argc; i++)
+    for (int i = 1; i < argc; i++)
+    {
+        Error err;
+        char op;
+        char *digit = argv[i];
+        op = is_operator(digit);
+        if (op == -1)
         {
-            if (!erro)
+            double number;
+            err = my_atof(digit, &number);
+            if (err.code == -1)
             {
-                char op;
-                char *digit = argv[i];
-                if (!(op = is_operator(digit)))
-                {
-                    push(my_atof(digit));
-                }
-                else
-                {
-                    operation(&op);
-                }
+                fprintf(stderr, "%s\n", err.msg);
+                exit(1);
             }
-            else
+            err = push(number);
+            if (err.code == -1)
             {
-                break;
+                fprintf(stderr, "%s\n", err.msg);
+                exit(1);
             }
         }
-
-        if (stackpointer > 1)
+        else
         {
-            printf("ERROR: too many operands\n");
-            erro = -1;
-        }
-
-        if (!erro)
-        {
-            double result = pop();
-            printf("the result is : %.2f\n", result);
+            Error err = operation(&op);
+            if (err.code == -1)
+            {
+                fprintf(stderr, "%s\n", err.msg);
+                exit(1);
+            }
         }
     }
-    else
+
+
+    if (stackpointer > 1)
     {
-        printf("input is empty\n");
+        fprintf(stderr, "too many operands\n");
+        exit(1);
     }
+
+    double result;
+    Error err = pop(&result);
+    if (err.code == -1)
+    {
+        fprintf(stderr, "%s\n", err.msg);
+        exit(1);
+    }
+    printf("the result is : %.2f\n", result);
+
+    return 0;
 }
 #endif /* UNIT_TEST */
 
-// Return 1 if *digit is '0'..'9', otherwise 0
+//stack operations
+Error push(double value)
+{
+    if (stackpointer < STACK_SIZE)
+    {
+        stack[stackpointer++] = value;
+        return (Error){0, NULL};
+    }
+    else
+    {
+        return (Error){-1, "stack is full"};
+    }
+}
+Error pop(double *result)
+{
+    if (stackpointer > 0)
+    {
+        *result = stack[--stackpointer];
+        return (Error){0, NULL};
+    }
+    return (Error){-1, "stack is empty"};
+}
+
+// Return 1 if *digit is '0'..'9', otherwise -1
 static int my_isdigit(const char *digit)
 {
+    if (digit == NULL || *digit == '\0')
+    {
+        return -1;
+    }
     int value = *digit - '0';
     if (value >= 0 && value <= 9)
     {
         return 1;
     }
 
-    return 0;
+    return -1;
 }
 
 // Convert string to double.
-double my_atof(const char *digit)
+Error my_atof(const char *digit, double *result)
 {
-    double result = 0.0;   /* Integer part */
-    double fraction = 0.0; /* Decimal part */
-    int sign = 1;          /* Number sign (1 or -1) */
+    *result = 0.0;
+    double fraction = 0.0;
+    int sign = 1;
 
     if (*digit == '-')
     {
@@ -91,9 +126,9 @@ double my_atof(const char *digit)
         sign = 1;
     }
 
-    while (my_isdigit(digit))
+    while (my_isdigit(digit) == 1)
     {
-        result = result * 10.0 + (*digit - '0');
+        *result = *result * 10.0 + (*digit - '0');
         digit++;
     }
 
@@ -101,7 +136,7 @@ double my_atof(const char *digit)
     {
         digit++;
         double divisor = 10.0;
-        while (my_isdigit(digit))
+        while (my_isdigit(digit) == 1)
         {
             fraction += (*digit - '0') / divisor;
             divisor *= 10.0;
@@ -111,83 +146,60 @@ double my_atof(const char *digit)
 
     if (*digit != '\0')
     {
-        char c = *digit;
-        printf("ERROR :NOT A NUMBER:\"%c\"\n", c);
-        return erro = -1;
+        return (Error){-1, "not a number"};
     }
 
-    result += fraction;
-    result *= sign;
-    return result;
+    *result += fraction;
+    *result *= sign;
+    return (Error){0, NULL};
 }
 
-void push(double value)
-{
-    if (stackpointer < STACK_SIZE)
-    {
-        stack[stackpointer++] = value;
-    }
-    else
-    {
-        printf("ERROR: cannot push stack is full\n");
-        erro = -1;
-    }
-}
-
-double pop(void)
-{
-    if (stackpointer > 0)
-    {
-        return stack[--stackpointer];
-    }
-
-    printf("ERROR: too many operators\n");
-    return erro = -1;
-}
-
-// Return operator char if input is a single operator (+ - * /)
+// Return operator char if input is a single operator (+ - * /) otherwise -1
 char is_operator(const char *operator)
 {
     char op = *operator;
 
-    if ((op == '-' || op == '+' || op == '*' || op == '/') && *++operator == '\0')
+    if ((op == '-' || op == '+' || op == '*' || op == '/') && *(operator + 1) == '\0')
     {
         return op;
     }
 
-    return 0;
+    return -1;
 }
 
 // Perform arithmetic on the top two stack values.
-void operation(const char *operator)
+Error operation(const char *operator)
 {
-    double op2 = pop(); /* Right operand */
-    double op1 = pop(); /* Left operand */
-
+    double op2;
+    Error err = pop(&op2);
+    if (err.code == -1)
+    {
+        return err;
+    }
+    double op1;
+    err = pop(&op1);
+    if (err.code == -1)
+    {
+        return err;
+    }
     switch (*operator)
     {
     case '-':
-        push(op1 - op2);
-        break;
+        return push(op1 - op2);
     case '+':
-        push(op1 + op2);
-        break;
+        return push(op1 + op2);
     case '*':
-        push(op1 * op2);
-        break;
+        return push(op1 * op2);
     case '/':
         if (op2 == 0)
         {
-            printf("ERROR: cannot divide by zero\n");
-            erro = -1;
+            return (Error){-1, "cannot divide by zero"};
         }
         else
         {
-            push(op1 / op2);
+            return push(op1 / op2);
         }
-        break;
     default:
-        printf("ERROR: operation: invalid operator");
-        erro = -1;
+        return (Error){-1, "invalid operator"};
     }
 }
